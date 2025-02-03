@@ -1,23 +1,34 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, BaseSettings
+from pydantic import BaseModel, SecretStr
+from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
 import openai
+import os
+
 
 app = FastAPI()
 
 # --- Настройки и конфигурация ---
+# class Settings(BaseSettings):
+#     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Ключ берется из переменных окружения
+
 class Settings(BaseSettings):
-    OPENAI_API_KEY: str  # Ключ берется из переменных окружения
-    GPT_MODEL: str = "gpt-3.5-turbo"  # Модель по умолчанию
+    openai_api_key: SecretStr
 
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
 settings = Settings()
+api_key = settings.openai_api_key.get_secret_value()
 
-# --- Модель для POST-запроса ---
-class UserRequest(BaseModel):
-    text: str  # Текст, который нужно передать в GPT
+GPT_MODEL: str = "gpt-4o"  # Модель по умолчанию
+
+# settings = Settings()
+# # --- Модель для POST-запроса ---
 
 # --- Эндпоинт для обработки запроса ---
 @app.post("/ask-gpt")
-async def ask_gpt(request: UserRequest):
+async def ask_gpt(request):
     try:
         # Проверка наличия текста
         if not request.text.strip():
@@ -25,15 +36,18 @@ async def ask_gpt(request: UserRequest):
 
         # Формируем промпт с дополнительным контекстом (опционально)
         prompt = f"""
-        Пользователь написал: '{request.text}'
-        Ответь подробно, но кратко:
+        Текст :
+        '{request.text}'
         """
-
+        system_message = '''Ты система суммаризации. Твоя задачи суммаризировать текст, которой будет подан на вход.
+        Не пиши ничего лишнего. В ответ пиши только суммаризированный текст. Строго соблюдай эту инструкцию.
+        '''
         # Отправляем запрос к ChatGPT
-        openai.api_key = settings.OPENAI_API_KEY
+        openai.api_key = api_key
         response = openai.ChatCompletion.create(
-            model=settings.GPT_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            model=GPT_MODEL,
+            messages=[{"role": "system", "content": system_message},
+                      {"role": "user", "content": prompt}],
             temperature=0.7,  # Контроль креативности (0-2)
             max_tokens=500    # Максимальная длина ответа
         )
